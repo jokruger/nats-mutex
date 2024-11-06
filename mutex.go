@@ -148,21 +148,54 @@ func NewMutex(opts ...Option) (*Mutex, error) {
 	return m, nil
 }
 
-func (m *Mutex) Lock() {
+// SyncMutex is a wrapper around Mutex that implements sync.Locker interface.
+func (m *Mutex) SyncMutex() SyncMutex {
+	return SyncMutex{m: m}
+}
+
+// Lock tries to acquire the lock, blocking until it’s available.
+func (m *Mutex) Lock() error {
 	for {
-		_, err := m.kv.Create(m.key, nil)
-		if err == nil {
-			return
+		res, err := m.TryLock()
+		if err != nil {
+			return err
+		}
+		if res {
+			return nil
 		}
 		time.Sleep(m.backoff)
 	}
 }
 
-func (m *Mutex) TryLock() bool {
-	_, err := m.kv.Create(m.key, nil)
-	return err == nil
+// TryLock attempts to acquire the lock without blocking.
+// Returns true if lock was acquired, false otherwise.
+func (m *Mutex) TryLock() (bool, error) {
+	_, err := m.kv.Create(m.key, []byte(m.owner))
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, nats.ErrKeyExists) {
+		return false, nil
+	}
+	return false, err
 }
 
-func (m *Mutex) Unlock() {
-	m.kv.Delete(m.key)
+// Unlock releases the lock if it's held by this instance.
+func (m *Mutex) Unlock() error {
+	entry, err := m.kv.Get(m.key)
+	if err != nil {
+		if errors.Is(err, nats.ErrKeyNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to retrieve lock state: %w", err)
+	}
+	if string(entry.Value()) != m.owner {
+		return errors.New("lock is not held by this instance, cannot unlock")
+	}
+
+	if err := m.kv.Delete(m.key); err != nil {
+		return fmt.Errorf("failed to release lock: %w", err)
+	}
+
+	return nil
 }
