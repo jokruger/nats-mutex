@@ -13,7 +13,7 @@ const defaultBucket = "distributed_locks"
 const defaultTtl = 30 * time.Second
 const defaultBackoff = 100 * time.Millisecond
 
-// Mutex implements a distributed lock using NATS JetStream and sync.Locker interface.
+// Mutex implements a distributed lock using NATS JetStream.
 type Mutex struct {
 	nc      *nats.Conn
 	js      nats.JetStreamContext
