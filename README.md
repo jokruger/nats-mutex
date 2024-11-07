@@ -12,9 +12,9 @@ go get github.com/jokruger/nats-mutex
 Process 1
 ```go
 ...
-m, _ := pgxmutex.NewSyncMutex(
-    pgxmutex.WithUrl("nats://localhost:4222"),
-    pgxmutex.WithResourceID("123"),
+m, _ := natsmutex.NewSyncMutex(
+    natsmutex.WithUrl("nats://localhost:4222"),
+    natsmutex.WithResourceID("123"),
 )
 m.Lock()
 fmt.Println("Process 1 is in critical section")
@@ -26,9 +26,9 @@ m.Unlock()
 Process 2
 ```go
 ...
-m, _ := pgxmutex.NewSyncMutex(
-    pgxmutex.WithUrl("nats://localhost:4222"),
-    pgxmutex.WithResourceID("123"),
+m, _ := natsmutex.NewSyncMutex(
+    natsmutex.WithUrl("nats://localhost:4222"),
+    natsmutex.WithResourceID("123"),
 )
 m.Lock()
 fmt.Println("Process 2 is in critical section")
