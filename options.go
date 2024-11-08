@@ -67,6 +67,15 @@ func WithResourceID(id string) Option {
 func WithOwner(owner uuid.UUID) Option {
 	return func(m *Mutex) error {
 		m.owner = owner
+		m.checkOwner = true
+		return nil
+	}
+}
+
+// WithOwnershipCheck enables or disables ownership check.
+func WithOwnershipCheck(check bool) Option {
+	return func(m *Mutex) error {
+		m.checkOwner = check
 		return nil
 	}
 }

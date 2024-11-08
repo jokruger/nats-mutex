@@ -12,22 +12,24 @@ import (
 
 // Mutex implements a distributed lock using NATS JetStream.
 type Mutex struct {
-	nc      *nats.Conn
-	js      nats.JetStreamContext
-	kv      nats.KeyValue
-	bucket  string
-	owner   uuid.UUID
-	ttl     time.Duration
-	backoff time.Duration
-	so      *singleton
+	nc         *nats.Conn
+	js         nats.JetStreamContext
+	kv         nats.KeyValue
+	bucket     string
+	owner      uuid.UUID
+	ttl        time.Duration
+	backoff    time.Duration
+	so         *singleton
+	checkOwner bool
 }
 
 // NewMutex creates a new Mutex with the specified options.
 func NewMutex(opts ...Option) (*Mutex, error) {
 	m := &Mutex{
-		bucket:  defaultBucket,
-		ttl:     defaultTtl,
-		backoff: defaultBackoff,
+		bucket:     defaultBucket,
+		ttl:        defaultTtl,
+		backoff:    defaultBackoff,
+		checkOwner: true,
 	}
 
 	// Apply each option to configure Mutex.
@@ -46,8 +48,8 @@ func NewMutex(opts ...Option) (*Mutex, error) {
 		m.so = getSingleton(uid.String())
 	}
 
-	// Generate a unique owner ID if not provided.
-	if m.owner == uuid.Nil {
+	// Generate a unique owner ID if needed.
+	if m.checkOwner && m.owner == uuid.Nil {
 		uid, err := uuid.NewV7()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate unique owner ID: %w", err)
@@ -121,16 +123,18 @@ func (m *Mutex) Lock() error {
 
 // Unlock releases the lock if it's held by this instance.
 func (m *Mutex) Unlock() error {
-	entry, err := m.kv.Get(m.so.id)
-	if err != nil {
-		if errors.Is(err, nats.ErrKeyNotFound) {
-			m.so.Unlock()
-			return nil
+	if m.checkOwner {
+		entry, err := m.kv.Get(m.so.id)
+		if err != nil {
+			if errors.Is(err, nats.ErrKeyNotFound) {
+				m.so.Unlock()
+				return nil
+			}
+			return fmt.Errorf("failed to retrieve lock state: %w", err)
 		}
-		return fmt.Errorf("failed to retrieve lock state: %w", err)
-	}
-	if !bytes.Equal(entry.Value(), m.owner[:]) {
-		return errors.New("lock is not held by this instance, cannot unlock")
+		if !bytes.Equal(entry.Value(), m.owner[:]) {
+			return errors.New("lock is not held by this instance, cannot unlock")
+		}
 	}
 
 	if err := m.kv.Delete(m.so.id); err != nil {
@@ -162,7 +166,11 @@ func (m *Mutex) TryLock() (bool, error) {
 }
 
 func (m *Mutex) tryLock() (bool, error) {
-	_, err := m.kv.Create(m.so.id, m.owner[:])
+	var v []byte
+	if m.checkOwner {
+		v = m.owner[:]
+	}
+	_, err := m.kv.Create(m.so.id, v)
 	if err == nil {
 		return true, nil
 	}
